@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core-geometry" },
+    { "path": "packages/core-path" },
+    { "path": "packages/core-editing" },
+    { "path": "apps/font-app" },
+    { "path": "apps/draw-app" }
+  ]
+}
