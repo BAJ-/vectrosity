@@ -4,3 +4,7 @@ export * from './segment';
 export * from './roots';
 export * from './bounds';
 export * from './area';
+export * from './flatten';
+export * from './winding';
+export * from './arclength';
+export * from './nearest';

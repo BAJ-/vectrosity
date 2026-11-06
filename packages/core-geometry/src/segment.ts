@@ -1,4 +1,4 @@
-import { add, lerp, scale, sub, type Vec2 } from './vec';
+import { add, lerp, scale, sub, vec2, type Vec2 } from './vec';
 
 export interface Line {
   readonly kind: 'line';
@@ -30,6 +30,14 @@ export const cubic = (p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2): Cubic => ({
   p2,
   p3,
 });
+
+/** The control points of a segment as a list, in order. */
+export const controlPoints = (s: Segment): Vec2[] =>
+  s.kind === 'line'
+    ? [s.p0, s.p1]
+    : s.kind === 'quad'
+      ? [s.p0, s.p1, s.p2]
+      : [s.p0, s.p1, s.p2, s.p3];
 
 export const startPoint = (s: Segment): Vec2 => s.p0;
 export const endPoint = (s: Segment): Vec2 =>
@@ -134,4 +142,19 @@ export const mapPoints = <S extends Segment>(s: S, f: (p: Vec2) => Vec2): S => {
       return cubic(f(s.p0), f(s.p1), f(s.p2), f(s.p3)) as S;
   }
   throw new Error('unknown segment kind');
+};
+
+/** The second derivative at parameter t (zero for a line, constant for a quadratic). */
+export const secondDerivative = (s: Segment, t: number): Vec2 => {
+  switch (s.kind) {
+    case 'line':
+      return vec2(0, 0);
+    case 'quad':
+      return scale(add(sub(s.p2, s.p1), sub(s.p0, s.p1)), 2);
+    case 'cubic': {
+      const a = add(sub(s.p2, s.p1), sub(s.p0, s.p1));
+      const b = add(sub(s.p3, s.p2), sub(s.p1, s.p2));
+      return scale(lerp(a, b, t), 6);
+    }
+  }
 };

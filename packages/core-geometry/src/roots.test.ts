@@ -32,6 +32,13 @@ describe('solveQuadratic', () => {
     );
   });
 
+  it('keeps a double root that rounding pushes just below zero', () => {
+    // (t - r1)(t - r2) with r1 and r2 one rounding step apart: found by a random test run.
+    const r1 = -99.99999999964503;
+    const r2 = -99.99999999964513;
+    expect(solveQuadratic(1, -(r1 + r2), r1 * r2).length).toBeGreaterThanOrEqual(1);
+  });
+
   it('filters to the open unit interval', () => {
     expect(insideUnitInterval([-1, 0, 0.5, 1, 2])).toEqual([0.5]);
   });

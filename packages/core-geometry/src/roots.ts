@@ -2,6 +2,7 @@
  * Real roots of a*t^2 + b*t + c = 0, sorted ascending.
  * Uses the numerically stable form (no cancellation between -b and sqrt(disc)),
  * and falls back to the linear case when `a` is negligible next to `b` and `c`.
+ * A discriminant within rounding error of zero counts as a double root.
  */
 export const solveQuadratic = (a: number, b: number, c: number): number[] => {
   const magnitude = Math.max(Math.abs(b), Math.abs(c));
@@ -10,8 +11,9 @@ export const solveQuadratic = (a: number, b: number, c: number): number[] => {
     return [-c / b];
   }
   const disc = b * b - 4 * a * c;
-  if (disc < 0) return [];
-  if (disc === 0) return [-b / (2 * a)];
+  // Rounding can push the discriminant of a double root slightly below zero; treat that as zero.
+  if (disc < -1e-12 * b * b) return [];
+  if (disc <= 0) return [-b / (2 * a)];
   const q = -0.5 * (b + (b >= 0 ? 1 : -1) * Math.sqrt(disc));
   const r1 = q / a;
   const r2 = c / q;

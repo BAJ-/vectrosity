@@ -1,4 +1,4 @@
-import { evaluate, endPoint, type Segment } from './segment';
+import { controlPoints, evaluate, endPoint, type Segment } from './segment';
 import { insideUnitInterval, solveQuadratic } from './roots';
 import type { Vec2 } from './vec';
 
@@ -49,16 +49,9 @@ const axisExtrema = (v: readonly number[]): number[] => {
   return [];
 };
 
-const controls = (s: Segment): Vec2[] =>
-  s.kind === 'line'
-    ? [s.p0, s.p1]
-    : s.kind === 'quad'
-      ? [s.p0, s.p1, s.p2]
-      : [s.p0, s.p1, s.p2, s.p3];
-
 /** Parameters t in (0, 1) where the segment turns in x or in y, sorted and de-duplicated. */
 export const extrema = (s: Segment): number[] => {
-  const pts = controls(s);
+  const pts = controlPoints(s);
   const ts = [...axisExtrema(pts.map((p) => p.x)), ...axisExtrema(pts.map((p) => p.y))];
   return [...new Set(ts)].sort((a, b) => a - b);
 };
