@@ -16,8 +16,6 @@ export const EMPTY_RECT: Rect = {
   maxY: -Infinity,
 };
 
-export const isEmptyRect = (r: Rect): boolean => r.minX > r.maxX || r.minY > r.maxY;
-
 export const includePoint = (r: Rect, p: Vec2): Rect => ({
   minX: Math.min(r.minX, p.x),
   minY: Math.min(r.minY, p.y),

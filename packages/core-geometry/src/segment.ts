@@ -39,7 +39,6 @@ export const controlPoints = (s: Segment): Vec2[] =>
       ? [s.p0, s.p1, s.p2]
       : [s.p0, s.p1, s.p2, s.p3];
 
-export const startPoint = (s: Segment): Vec2 => s.p0;
 export const endPoint = (s: Segment): Vec2 =>
   s.kind === 'line' ? s.p1 : s.kind === 'quad' ? s.p2 : s.p3;
 
@@ -98,8 +97,6 @@ export const split = <S extends Segment>(s: S, t: number): [S, S] => {
       return [cubic(s.p0, a, ab, m), cubic(m, bc, c, s.p3)] as [S, S];
     }
   }
-  // Unreachable; keeps TypeScript satisfied that every branch returns.
-  throw new Error('unknown segment kind');
 };
 
 /** The same segment traversed from end to start. */
@@ -112,7 +109,6 @@ export const reverse = <S extends Segment>(s: S): S => {
     case 'cubic':
       return cubic(s.p3, s.p2, s.p1, s.p0) as S;
   }
-  throw new Error('unknown segment kind');
 };
 
 /** Exact conversion of a line or quadratic to a cubic with the same shape (degree elevation). */
@@ -141,7 +137,6 @@ export const mapPoints = <S extends Segment>(s: S, f: (p: Vec2) => Vec2): S => {
     case 'cubic':
       return cubic(f(s.p0), f(s.p1), f(s.p2), f(s.p3)) as S;
   }
-  throw new Error('unknown segment kind');
 };
 
 /** The second derivative at parameter t (zero for a line, constant for a quadratic). */
