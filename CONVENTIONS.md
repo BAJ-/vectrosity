@@ -10,3 +10,4 @@
 - **Each package imports only what its package.json declares.**
 - **Tests:** unit tests for known cases, fast-check properties for invariants, fixtures for real glyphs.
 - **Formatting is Prettier's.** Run `npm run format` before committing; `npm run check` fails on unformatted code.
+- **Run `npm run test:stress` as a check on each major change** (and after changing any numeric algorithm). It runs every property test with 5,000 random cases instead of 100. When it finds a failure, add the counterexample as a plain test so it is checked on every run.

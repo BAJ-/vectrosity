@@ -13,6 +13,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:stress": "vitest run --mode stress",
     "check:imports": "node scripts/check-core-imports.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
