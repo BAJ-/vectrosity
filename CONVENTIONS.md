@@ -9,3 +9,4 @@
 - **No DOM, React, Electron or Node** in `packages/*`. `npm run check:imports` enforces this.
 - **Each package imports only what its package.json declares.**
 - **Tests:** unit tests for known cases, fast-check properties for invariants, fixtures for real glyphs.
+- **Formatting is Prettier's.** Run `npm run format` before committing; `npm run check` fails on unformatted code.
