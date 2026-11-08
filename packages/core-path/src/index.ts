@@ -10,3 +10,6 @@ export {
   setStartPoint,
 } from './edit';
 export * from './transform';
+export * from './direction';
+export * from './svg';
+export * from './draw';
