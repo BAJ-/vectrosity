@@ -227,3 +227,40 @@ export const deletePoint = (c: Contour, pointId: string): Contour | null => {
   if (onCount === 0 || (!closed && onCount < 2)) return null;
   return { ...c, points };
 };
+
+/**
+ * Turns a straight run into a cubic that draws the same line: two off-curve points at 1/3
+ * and 2/3 of the way along it. Runs that are not lines are returned unchanged.
+ * Structure-changing: adds two points.
+ */
+export const lineToCurve = (c: Contour, runIndex: number, ids: IdGenerator): Contour => {
+  const run = contourRuns(c).at(runIndex);
+  if (!run || run.type !== 'line') return c;
+  const start = pointAt(c, run.start);
+  const end = pointAt(c, run.end);
+  const middle = [
+    offPoint(ids(), lerp(start, end, 1 / 3)),
+    offPoint(ids(), lerp(start, end, 2 / 3)),
+  ];
+  const changed = replaceRunMiddle(c, run, middle);
+  const endId = end.id;
+  return {
+    ...changed,
+    points: changed.points.map((p) => (p.id === endId ? withType(p, 'curve') : p)),
+  };
+};
+
+/**
+ * Turns a 'curve' run into a straight line by removing its off-curve points. The outline only
+ * stays the same if every off-curve point already lies on the line. Structure-changing.
+ */
+export const curveToLine = (c: Contour, runIndex: number): Contour => {
+  const run = contourRuns(c).at(runIndex);
+  if (!run || run.type !== 'curve') return c;
+  const endId = pointAt(c, run.end).id;
+  const changed = replaceRunMiddle(c, run, []);
+  return {
+    ...changed,
+    points: changed.points.map((p) => (p.id === endId ? withType(p, 'line') : p)),
+  };
+};

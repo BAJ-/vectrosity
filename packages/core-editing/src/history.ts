@@ -1,15 +1,17 @@
-import type { Vec2 } from '@vcore/geometry';
-import type { Path } from '@vcore/path';
+import type { Contour, Path } from '@vcore/path';
 
-/** One point moved from one position to another. */
-export interface PointMove {
-  readonly pointId: string;
-  readonly from: Vec2;
-  readonly to: Vec2;
+/** One contour as it was before an edit and as it is after it. */
+export interface ContourChange {
+  readonly contourId: string;
+  readonly before: Contour;
+  readonly after: Contour;
 }
 
-/** One undo step: every point a single edit (such as one drag) moved. */
-export type Change = readonly PointMove[];
+/**
+ * One undo step: every contour a single edit (such as one drag) changed. Storing whole
+ * contours covers moved points and added or removed points alike.
+ */
+export type Change = readonly ContourChange[];
 
 export interface History {
   readonly past: readonly Change[];
@@ -18,31 +20,38 @@ export interface History {
 
 export const emptyHistory: History = { past: [], future: [] };
 
-const setPositions = (path: Path, positions: ReadonlyMap<string, Vec2>): Path => ({
-  contours: path.contours.map((c) => ({
-    ...c,
-    points: c.points.map((p) => {
-      const at = positions.get(p.id);
-      return at ? { ...p, x: at.x, y: at.y } : p;
-    }),
-  })),
-});
+const sameContour = (a: Contour, b: Contour): boolean =>
+  a === b ||
+  (a.points.length === b.points.length &&
+    a.points.every((p, i) => {
+      const q = b.points[i];
+      return (
+        q !== undefined &&
+        p.id === q.id &&
+        p.x === q.x &&
+        p.y === q.y &&
+        p.type === q.type &&
+        p.smooth === q.smooth
+      );
+    }));
 
-/** Applies a change forwards (to the new positions) or backwards (to the old ones). */
-export const applyChange = (path: Path, change: Change, backwards = false): Path =>
-  setPositions(path, new Map(change.map((m) => [m.pointId, backwards ? m.from : m.to])));
+/** Applies a change forwards (to the contours after) or backwards (to the contours before). */
+export const applyChange = (path: Path, change: Change, backwards = false): Path => {
+  const byId = new Map(change.map((c) => [c.contourId, backwards ? c.before : c.after]));
+  return { contours: path.contours.map((c) => byId.get(c.id) ?? c) };
+};
 
-/** The change that turns `before` into `after`: every point whose position differs. */
-export const diffPositions = (before: Path, after: Path): Change => {
-  const old = new Map(before.contours.flatMap((c) => c.points.map((p) => [p.id, p] as const)));
-  return after.contours.flatMap((c) =>
-    c.points.flatMap((p) => {
-      const was = old.get(p.id);
-      return was && (was.x !== p.x || was.y !== p.y)
-        ? [{ pointId: p.id, from: { x: was.x, y: was.y }, to: { x: p.x, y: p.y } }]
-        : [];
-    }),
-  );
+/**
+ * The change that turns `before` into `after`: every contour that differs.
+ * Throws if contours were added or removed; no edit does that yet.
+ */
+export const diffPaths = (before: Path, after: Path): Change => {
+  const ids = (p: Path) => p.contours.map((c) => c.id).join(' ');
+  if (ids(before) !== ids(after)) throw new Error('diffPaths: contours were added or removed');
+  return after.contours.flatMap((c, i) => {
+    const was = before.contours[i];
+    return was && !sameContour(was, c) ? [{ contourId: c.id, before: was, after: c }] : [];
+  });
 };
 
 /** Adds a change as the newest undo step. Empty changes are ignored; redo steps are dropped. */

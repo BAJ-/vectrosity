@@ -16,4 +16,10 @@ describe('hitTestPoint', () => {
   it('finds nothing outside the radius', () => {
     expect(hitTestPoint(path, vec2(10, 0), view, 5)).toBeNull();
   });
+
+  it('prefers the anchor when a handle sits on top of it', () => {
+    // The incoming handle (10,0) of the anchor at (10,0) comes before the anchor in the list.
+    const stacked = fromSvgPath('M0 0 C5 0 10 0 10 0', counterIds());
+    expect(hitTestPoint(stacked, vec2(20, 0), view, 5)?.type).toBe('curve');
+  });
 });

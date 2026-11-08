@@ -1,4 +1,4 @@
-// Font app: fixture glyphs with corrected directions; select, drag and undo points.
+// Font app: fixture glyphs with corrected directions; select, drag, reshape and undo points.
 import {
   apply,
   invert,
@@ -11,12 +11,14 @@ import {
 } from '@vcore/geometry';
 import {
   constrainDelta,
-  diffPositions,
+  diffPaths,
   emptyHistory,
   hitTestPoint,
   movePoints,
   record,
   redo,
+  resetHandles,
+  retractHandle,
   undo,
   type History,
   type Selection,
@@ -34,6 +36,7 @@ import {
   toSegments,
   transformPath,
   type Contour,
+  type IdGenerator,
   type Path,
   type Point,
 } from '@vcore/path';
@@ -59,7 +62,7 @@ interface Glyph {
   readonly original: Path;
 }
 
-const loadGlyph = (name: string): { glyph: Glyph; path: Path } => {
+const loadGlyph = (name: string): { glyph: Glyph; path: Path; ids: IdGenerator } => {
   const data = fixture.glyphs[name as keyof typeof fixture.glyphs];
   const ids = counterIds(`${name}-`);
   const original = fromSvgPath(data.d, ids);
@@ -78,10 +81,11 @@ const loadGlyph = (name: string): { glyph: Glyph; path: Path } => {
   const corrected = correctDirections(cubics, 'counterclockwise', DIRECTION_TOLERANCE);
   // SVG path data has no smooth flags; mark anchors that sit in line with their neighbours.
   const path = detectSmoothPoints(corrected, SMOOTH_ANGLE);
-  return { glyph: { name, advance: data.advance, original }, path };
+  return { glyph: { name, advance: data.advance, original }, path, ids };
 };
 
-let { glyph, path } = loadGlyph('a');
+/** `ids` makes the IDs for points that edits add; one generator per loaded glyph. */
+let { glyph, path, ids } = loadGlyph('a');
 let history: History = emptyHistory;
 let selection: Selection = new Set();
 let hoveredId: string | null = null;
@@ -206,7 +210,8 @@ const showInfo = (): void => {
     ? `<p>${only.id}: ${only.type}${only.smooth ? ', smooth' : ''}</p><p>x ${only.x}, y ${only.y}</p>`
     : chosen.length > 1
       ? `<p>${chosen.length} points selected</p>`
-      : '<p>Click a point to select it, shift-click to add. Drag to move (shift: straight).</p>';
+      : '<p>Click a point to select it, shift-click to add. Drag to move (shift: straight).</p>' +
+        '<p>Option/Alt-click an anchor to reset its handles, or a handle to retract it.</p>';
   info.innerHTML = `
     <h2>Glyph "${glyph.name}"</h2>
     <p>Advance width ${glyph.advance}</p>
@@ -231,6 +236,18 @@ const render = (): void => {
 
 canvas.addEventListener('mousedown', (event) => {
   const hit = pointUnder(event);
+  if (event.altKey) {
+    if (!hit) return;
+    const before = path;
+    path = isOnCurve(hit) ? resetHandles(path, hit.id, ids) : retractHandle(path, hit.id);
+    history = record(history, diffPaths(before, path));
+    // A retracted handle may have been removed (its segment became a line).
+    const stillThere = path.contours.some((c) => c.points.some((p) => p.id === hit.id));
+    selection = new Set(stillThere ? [hit.id] : []);
+    draw();
+    showInfo();
+    return;
+  }
   if (event.shiftKey) {
     if (hit) {
       const next = new Set(selection);
@@ -267,7 +284,7 @@ canvas.addEventListener('mousemove', (event) => {
 window.addEventListener('mouseup', () => {
   if (!drag) return;
   // The whole drag is one undo step.
-  history = record(history, diffPositions(drag.startPath, path));
+  history = record(history, diffPaths(drag.startPath, path));
   drag = null;
 });
 
@@ -288,7 +305,7 @@ for (const name of Object.keys(fixture.glyphs)) {
   button.textContent = name;
   button.setAttribute('aria-pressed', String(name === glyph.name));
   button.addEventListener('click', () => {
-    ({ glyph, path } = loadGlyph(name));
+    ({ glyph, path, ids } = loadGlyph(name));
     history = emptyHistory;
     selection = new Set();
     hoveredId = null;
