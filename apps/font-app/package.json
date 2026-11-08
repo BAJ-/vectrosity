@@ -3,12 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "main": "out/main/index.js",
+  "scripts": {
+    "predev": "install-electron",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "prestart": "install-electron",
+    "start": "electron-vite preview"
   },
   "dependencies": {
-    "@vcore/editing": "*",
     "@vcore/geometry": "*",
     "@vcore/path": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "electron": "^45.2.3",
+    "electron-vite": "^6.0.0"
   }
 }

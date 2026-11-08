@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist/web",
+    "lib": ["ES2022", "DOM"],
+    "resolveJsonModule": true
+  },
+  "include": ["src/renderer", "../../fixtures/*.json"],
+  "references": [{ "path": "../../packages/core-geometry" }, { "path": "../../packages/core-path" }]
+}

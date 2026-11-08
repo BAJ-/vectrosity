@@ -17,11 +17,15 @@
     "check:imports": "node scripts/check-core-imports.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run format:check && npm run typecheck && npm run check:imports && npm test",
+    "dev:font": "npm run dev -w @vcore/font-app",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "check": "npm run format:check && npm run typecheck && npm run lint && npm run check:imports && npm test",
     "clean": "tsc -b --clean"
   },
   "devDependencies": {
     "fast-check": "^4.10.2",
+    "oxlint": "^1.92.0",
+    "oxlint-tsgolint": "^7.0.2006",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

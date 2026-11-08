@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Font editor</title>
+    <style>
+      body {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr 280px;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+      nav {
+        grid-column: 1 / 3;
+        display: flex;
+        gap: 4px;
+        padding: 8px;
+        border-bottom: 1px solid #ddd;
+      }
+      nav button {
+        font:
+          16px Georgia,
+          serif;
+        width: 36px;
+        height: 32px;
+      }
+      nav button[aria-pressed='true'] {
+        background: #222;
+        color: #fff;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      aside {
+        border-left: 1px solid #ddd;
+        padding: 12px;
+        overflow: auto;
+      }
+      aside h2 {
+        font-size: 13px;
+        margin: 0 0 6px;
+      }
+      aside p {
+        margin: 0 0 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav id="glyphs"></nav>
+    <canvas id="canvas"></canvas>
+    <aside id="info"></aside>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
