@@ -6,5 +6,11 @@
     "resolveJsonModule": true
   },
   "include": ["src/renderer", "../../fixtures/*.json"],
-  "references": [{ "path": "../../packages/core-geometry" }, { "path": "../../packages/core-path" }]
+  "references": [
+    { "path": "../../packages/core-geometry" },
+    { "path": "../../packages/core-path" },
+    {
+      "path": "../../packages/core-editing"
+    }
+  ]
 }

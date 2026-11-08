@@ -1,10 +1,35 @@
-import { apply, distance, segmentsBounds, vec2, type Affine, type Vec2 } from '@vcore/geometry';
+// Font app: fixture glyphs with corrected directions; select, drag and undo points.
+import {
+  apply,
+  invert,
+  segmentsBounds,
+  sub,
+  toCubic,
+  vec2,
+  type Affine,
+  type Vec2,
+} from '@vcore/geometry';
+import {
+  constrainDelta,
+  diffPositions,
+  emptyHistory,
+  hitTestPoint,
+  movePoints,
+  record,
+  redo,
+  undo,
+  type History,
+  type Selection,
+} from '@vcore/editing';
 import {
   contourArea,
+  contourFromSegments,
   correctDirections,
   counterIds,
+  detectSmoothPoints,
   drawPath,
   fromSvgPath,
+  isClosed,
   isOnCurve,
   toSegments,
   transformPath,
@@ -18,6 +43,8 @@ import fixture from '../../../../fixtures/source-serif-4.json';
 const HIT_RADIUS = 6;
 /** Flattening tolerance for the direction check, in font units. */
 const DIRECTION_TOLERANCE = 0.5;
+/** Largest bend (radians, about 0.6 degrees) at which an anchor still counts as smooth. */
+const SMOOTH_ANGLE = 0.01;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
 const info = document.querySelector<HTMLElement>('#info');
@@ -25,24 +52,41 @@ const nav = document.querySelector<HTMLElement>('#glyphs');
 const ctx = canvas?.getContext('2d');
 if (!canvas || !info || !nav || !ctx) throw new Error('page is missing an element');
 
-interface GlyphView {
+interface Glyph {
   readonly name: string;
   readonly advance: number;
+  /** As loaded, before direction correction; only used to report what changed. */
   readonly original: Path;
-  /** Outer contours counter-clockwise, as CFF (OpenType) fonts expect. */
-  readonly path: Path;
 }
 
-const loadGlyph = (name: string): GlyphView => {
-  const glyph = fixture.glyphs[name as keyof typeof fixture.glyphs];
-  const original = fromSvgPath(glyph.d, counterIds(`${name}-`));
-  const path = correctDirections(original, 'counterclockwise', DIRECTION_TOLERANCE);
-  return { name, advance: glyph.advance, original, path };
+const loadGlyph = (name: string): { glyph: Glyph; path: Path } => {
+  const data = fixture.glyphs[name as keyof typeof fixture.glyphs];
+  const ids = counterIds(`${name}-`);
+  const original = fromSvgPath(data.d, ids);
+  // The fixture font is TrueType (quadratic curves). The editor works in cubics, as CFF fonts
+  // do, so convert each quadratic to the exact same curve as a cubic.
+  const cubics: Path = {
+    contours: original.contours.map((c) =>
+      contourFromSegments(
+        toSegments(c).map((s) => (s.kind === 'quad' ? toCubic(s) : s)),
+        isClosed(c),
+        ids,
+      ),
+    ),
+  };
+  // Outer contours counter-clockwise, as CFF (OpenType) fonts expect.
+  const corrected = correctDirections(cubics, 'counterclockwise', DIRECTION_TOLERANCE);
+  // SVG path data has no smooth flags; mark anchors that sit in line with their neighbours.
+  const path = detectSmoothPoints(corrected, SMOOTH_ANGLE);
+  return { glyph: { name, advance: data.advance, original }, path };
 };
 
-let glyph = loadGlyph('a');
-let hovered: Point | null = null;
-let selected: Point | null = null;
+let { glyph, path } = loadGlyph('a');
+let history: History = emptyHistory;
+let selection: Selection = new Set();
+let hoveredId: string | null = null;
+/** While dragging: the path and mouse position (model units) when the drag started. */
+let drag: { startPath: Path; startAt: Vec2 } | null = null;
 /** Font units to screen pixels (y flipped: fonts are y-up, the screen is y-down). */
 let view: Affine = [1, 0, 0, 1, 0, 0];
 
@@ -108,7 +152,7 @@ const draw = (): void => {
 
   // The outline in screen space: filled with the non-zero rule, then stroked.
   const outline = new Path2D();
-  drawPath(transformPath(glyph.path, view), outline);
+  drawPath(transformPath(path, view), outline);
   ctx.fillStyle = '#e8e8e8';
   ctx.fill(outline, 'nonzero');
   ctx.strokeStyle = '#222';
@@ -117,7 +161,7 @@ const draw = (): void => {
 
   // Handles, then points: on-curve squares (circles when smooth), off-curve small circles.
   ctx.strokeStyle = '#999';
-  for (const c of glyph.path.contours) {
+  for (const c of path.contours) {
     for (const [p, q] of handleLines(c)) {
       const a = screen(p);
       const b = screen(q);
@@ -127,11 +171,12 @@ const draw = (): void => {
       ctx.stroke();
     }
   }
-  for (const c of glyph.path.contours) {
+  for (const c of path.contours) {
     c.points.forEach((p, i) => {
       const s = screen(p);
-      const active = p === selected || p === hovered;
-      ctx.fillStyle = p === selected ? '#d33' : i === 0 ? '#2a7' : isOnCurve(p) ? '#226' : '#fff';
+      const isSelected = selection.has(p.id);
+      const active = isSelected || p.id === hoveredId;
+      ctx.fillStyle = isSelected ? '#d33' : i === 0 ? '#2a7' : isOnCurve(p) ? '#226' : '#fff';
       ctx.strokeStyle = active ? '#d33' : '#226';
       const r = active ? 5 : 3.5;
       ctx.beginPath();
@@ -147,40 +192,36 @@ const direction = (c: Contour): string =>
   contourArea(c) > 0 ? 'counter-clockwise' : contourArea(c) < 0 ? 'clockwise' : 'no area';
 
 const showInfo = (): void => {
-  const bounds = segmentsBounds(glyph.path.contours.flatMap(toSegments));
-  const rows = glyph.path.contours.map((c, i) => {
+  const bounds = segmentsBounds(path.contours.flatMap(toSegments));
+  const rows = path.contours.map((c, i) => {
     const before = glyph.original.contours.at(i);
     const was = before ? direction(before) : '';
     const now = direction(c);
     const change = was === now ? 'unchanged' : `was ${was}`;
     return `<p>Contour ${i + 1}: ${c.points.length} points, ${now} (${change})</p>`;
   });
-  const point = selected
-    ? `<p>${selected.id}: ${selected.type}${selected.smooth ? ', smooth' : ''}</p><p>x ${selected.x}, y ${selected.y}</p>`
-    : '<p>Click a point to select it.</p>';
+  const chosen = path.contours.flatMap((c) => c.points).filter((p) => selection.has(p.id));
+  const only = chosen.length === 1 ? chosen[0] : undefined;
+  const point = only
+    ? `<p>${only.id}: ${only.type}${only.smooth ? ', smooth' : ''}</p><p>x ${only.x}, y ${only.y}</p>`
+    : chosen.length > 1
+      ? `<p>${chosen.length} points selected</p>`
+      : '<p>Click a point to select it, shift-click to add. Drag to move (shift: straight).</p>';
   info.innerHTML = `
     <h2>Glyph "${glyph.name}"</h2>
     <p>Advance width ${glyph.advance}</p>
     <p>Bounds x ${bounds.minX} to ${bounds.maxX}, y ${bounds.minY} to ${bounds.maxY}</p>
     <h2 style="margin-top:12px">Contours</h2>${rows.join('')}
     <p style="color:#666">Green point: contour start. Outer contours should be counter-clockwise, holes clockwise.</p>
-    <h2 style="margin-top:12px">Selection</h2>${point}`;
+    <h2 style="margin-top:12px">Selection</h2>${point}
+    <p style="color:#666">Undo: Cmd/Ctrl+Z. Redo: Shift+Cmd/Ctrl+Z.</p>`;
 };
 
-const pointAtScreen = (at: Vec2): Point | null => {
-  let best: Point | null = null;
-  let bestDistance = HIT_RADIUS;
-  for (const c of glyph.path.contours) {
-    for (const p of c.points) {
-      const d = distance(screen(p), at);
-      if (d <= bestDistance) {
-        best = p;
-        bestDistance = d;
-      }
-    }
-  }
-  return best;
-};
+const mouse = (event: MouseEvent): Vec2 => vec2(event.offsetX, event.offsetY);
+const pointUnder = (event: MouseEvent): Point | null =>
+  hitTestPoint(path, mouse(event), view, HIT_RADIUS);
+/** Screen position to font units. */
+const toModel = (at: Vec2): Vec2 => apply(invert(view) ?? view, at);
 
 const render = (): void => {
   fitView();
@@ -188,19 +229,58 @@ const render = (): void => {
   showInfo();
 };
 
+canvas.addEventListener('mousedown', (event) => {
+  const hit = pointUnder(event);
+  if (event.shiftKey) {
+    if (hit) {
+      const next = new Set(selection);
+      if (next.has(hit.id)) next.delete(hit.id);
+      else next.add(hit.id);
+      selection = next;
+    }
+  } else if (!hit) {
+    selection = new Set();
+  } else if (!selection.has(hit.id)) {
+    selection = new Set([hit.id]);
+  }
+  if (hit && selection.has(hit.id)) drag = { startPath: path, startAt: toModel(mouse(event)) };
+  draw();
+  showInfo();
+});
+
 canvas.addEventListener('mousemove', (event) => {
-  const next = pointAtScreen(vec2(event.offsetX, event.offsetY));
-  if (next !== hovered) {
-    hovered = next;
+  if (drag) {
+    const delta = sub(toModel(mouse(event)), drag.startAt);
+    path = movePoints(drag.startPath, selection, event.shiftKey ? constrainDelta(delta) : delta);
+    draw();
+    showInfo();
+    return;
+  }
+  const next = pointUnder(event)?.id ?? null;
+  if (next !== hoveredId) {
+    hoveredId = next;
     canvas.style.cursor = next ? 'pointer' : 'default';
     draw();
   }
 });
-canvas.addEventListener('mousedown', (event) => {
-  selected = pointAtScreen(vec2(event.offsetX, event.offsetY));
+
+window.addEventListener('mouseup', () => {
+  if (!drag) return;
+  // The whole drag is one undo step.
+  history = record(history, diffPositions(drag.startPath, path));
+  drag = null;
+});
+
+window.addEventListener('keydown', (event) => {
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || drag) return;
+  event.preventDefault();
+  const result = event.shiftKey ? redo(history, path) : undo(history, path);
+  if (!result) return;
+  ({ history, path } = result);
   draw();
   showInfo();
 });
+
 window.addEventListener('resize', render);
 
 for (const name of Object.keys(fixture.glyphs)) {
@@ -208,9 +288,10 @@ for (const name of Object.keys(fixture.glyphs)) {
   button.textContent = name;
   button.setAttribute('aria-pressed', String(name === glyph.name));
   button.addEventListener('click', () => {
-    glyph = loadGlyph(name);
-    hovered = null;
-    selected = null;
+    ({ glyph, path } = loadGlyph(name));
+    history = emptyHistory;
+    selection = new Set();
+    hoveredId = null;
     for (const b of nav.querySelectorAll('button')) {
       b.setAttribute('aria-pressed', String(b === button));
     }

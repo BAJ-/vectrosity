@@ -12,6 +12,7 @@
     "start": "electron-vite preview"
   },
   "dependencies": {
+    "@vcore/editing": "*",
     "@vcore/geometry": "*",
     "@vcore/path": "*"
   },
