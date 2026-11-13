@@ -13,6 +13,7 @@ import {
 } from '@vcore/geometry';
 import {
   constrainDelta,
+  contourPointIds,
   diff,
   dragSegment,
   emptyHistory,
@@ -30,7 +31,9 @@ import {
   redo,
   resetHandles,
   retractHandle,
+  segmentEnds,
   snapDelta,
+  toggleSelection,
   toggleSmooth,
   undo,
   type EditState,
@@ -44,7 +47,6 @@ import {
 import {
   contourArea,
   contourFromSegments,
-  contourRuns,
   correctDirections,
   counterIds,
   detectSmoothPoints,
@@ -141,8 +143,9 @@ let drag: {
   retractId: string | null;
 } | null = null;
 /**
- * While dragging a curve: the path before, where the drag started (model units), and what
- * was grabbed (the contour, its run index and the position t along it).
+ * While pressing on a curve: the path before, where the press started (model units), what was
+ * grabbed (the contour, its run index and the position t along it), and whether shift was
+ * held. Dragging reshapes the curve; releasing without moving selects the segment instead.
  */
 let segmentDrag: {
   startPath: Path;
@@ -150,6 +153,7 @@ let segmentDrag: {
   contourId: string;
   run: number;
   t: number;
+  additive: boolean;
 } | null = null;
 /** While dragging a selection rectangle: its corners (screen pixels) and the selection kept. */
 let marquee: { start: Vec2; end: Vec2; keep: Selection } | null = null;
@@ -430,7 +434,8 @@ const showInfo = (): void => {
         'Click the end of an open contour to continue it. Click on an outline to add a point ' +
         'there.</p>'
       : '<p><b>Select</b> (P: pen tool). Click a point to select it, shift-click to add, or ' +
-        'drag a rectangle around points.</p>' +
+        'drag a rectangle around points. Click a segment to select its two anchors; ' +
+        'double-click an outline to select its whole contour.</p>' +
         '<p>Drag or use the arrow keys to move (shift: straight, or 10 units).</p>' +
         '<p>Dragged points snap to the metric lines and side bearings. Hold Cmd/Ctrl to drag ' +
         'without snapping (shift also turns it off while it keeps the drag straight).</p>' +
@@ -540,15 +545,12 @@ canvas.addEventListener('mousedown', (event) => {
     // On a curve: reshape it. On a straight segment: move it (its two anchors).
     // Anywhere else: a selection rectangle.
     const segment = hitTestSegment(path, mouse(event), view, HIT_RADIUS);
-    const contour = path.contours.find((c) => c.id === segment?.contourId);
     if (segment?.kind === 'cubic') {
-      selection = new Set();
       const { contourId, run, t } = segment;
-      segmentDrag = { startPath: path, startAt: at, contourId, run, t };
-    } else if (segment?.kind === 'line' && contour) {
-      const line = contourRuns(contour)[segment.run];
-      const ends = [line?.start, line?.end].map((i) => contour.points[i ?? -1]?.id ?? '');
-      selection = new Set(ends);
+      segmentDrag = { startPath: path, startAt: at, contourId, run, t, additive: event.shiftKey };
+    } else if (segment?.kind === 'line') {
+      const ends = segmentEnds(path, segment.contourId, segment.run);
+      selection = event.shiftKey ? toggleSelection(selection, ends) : new Set(ends);
       drag = { startPath: path, startAt: at, independent: false, retractId: null };
     } else {
       const guide = hitTestGuide(movableGuides(), mouse(event), view, HIT_RADIUS);
@@ -562,10 +564,7 @@ canvas.addEventListener('mousedown', (event) => {
     }
   } else {
     if (event.shiftKey) {
-      const next = new Set(selection);
-      if (next.has(hit.id)) next.delete(hit.id);
-      else next.add(hit.id);
-      selection = next;
+      selection = toggleSelection(selection, [hit.id]);
     } else if (!selection.has(hit.id)) {
       selection = new Set([hit.id]);
     }
@@ -673,10 +672,17 @@ window.addEventListener('mouseup', (event) => {
     return;
   }
   if (segmentDrag) {
-    // The whole drag is one undo step.
-    const reshaped = path;
-    path = segmentDrag.startPath;
-    commitPath(reshaped);
+    const { startPath, contourId, run, additive } = segmentDrag;
+    if (path === startPath) {
+      // A click without moving selects the segment's two anchors.
+      const ends = segmentEnds(path, contourId, run);
+      selection = additive ? toggleSelection(selection, ends) : new Set(ends);
+    } else {
+      // The whole drag is one undo step.
+      const reshaped = path;
+      path = startPath;
+      commitPath(reshaped);
+    }
     segmentDrag = null;
     draw();
     showInfo();
@@ -702,9 +708,18 @@ window.addEventListener('mouseup', (event) => {
 });
 
 canvas.addEventListener('dblclick', (event) => {
+  if (tool !== 'select' || event.altKey) return;
   const hit = pointUnder(event);
-  if (tool !== 'select' || !hit || !isOnCurve(hit) || event.altKey) return;
-  commitPath(toggleSmooth(path, hit.id));
+  if (hit && isOnCurve(hit)) {
+    // On an anchor: switch it between smooth and corner.
+    commitPath(toggleSmooth(path, hit.id));
+  } else if (!hit) {
+    // On an outline: select its whole contour.
+    const segment = hitTestSegment(path, mouse(event), view, HIT_RADIUS);
+    if (!segment) return;
+    const all = contourPointIds(path, segment.contourId);
+    selection = event.shiftKey ? new Set([...selection, ...all]) : new Set(all);
+  }
   draw();
   showInfo();
 });

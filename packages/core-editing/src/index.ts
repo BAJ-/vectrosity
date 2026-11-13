@@ -5,3 +5,4 @@ export * from './handles';
 export * from './pen';
 export * from './snap';
 export * from './guides';
+export * from './selection';
