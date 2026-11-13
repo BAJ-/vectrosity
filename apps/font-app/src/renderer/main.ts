@@ -64,6 +64,7 @@ import {
   type Point,
 } from '@vcore/path';
 import fixture from '../../../../fixtures/source-serif-4.json';
+import { exportOtf, FAMILY_NAME, type ExportGlyph } from './export';
 
 /** Hover and click distance, in screen pixels. */
 const HIT_RADIUS = 6;
@@ -83,8 +84,9 @@ const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
 const info = document.querySelector<HTMLElement>('#info');
 const nav = document.querySelector<HTMLElement>('#glyphs');
 const handleSelect = document.querySelector<HTMLSelectElement>('#handle-mode');
+const exportButton = document.querySelector<HTMLButtonElement>('#export');
 const ctx = canvas?.getContext('2d');
-if (!canvas || !info || !nav || !handleSelect || !ctx) {
+if (!canvas || !info || !nav || !handleSelect || !exportButton || !ctx) {
   throw new Error('page is missing an element');
 }
 
@@ -128,6 +130,11 @@ const loadGlyph = (name: string): { glyph: Glyph; path: Path; ids: IdGenerator }
 
 /** `ids` makes the IDs for points that edits add; one generator per loaded glyph. */
 let { glyph, path, ids } = loadGlyph('a');
+/**
+ * Glyphs edited and then left, so switching back (and exporting) keeps their changes:
+ * outline, id generator (so new points never reuse an id) and advance width.
+ */
+const edited = new Map<string, { path: Path; ids: IdGenerator; advance: number }>();
 let history: History = emptyHistory;
 let selection: Selection = new Set();
 let hoveredId: string | null = null;
@@ -758,8 +765,14 @@ for (const name of Object.keys(fixture.glyphs)) {
   button.textContent = name;
   button.setAttribute('aria-pressed', String(name === glyph.name));
   button.addEventListener('click', () => {
-    ({ glyph, path, ids } = loadGlyph(name));
-    guides = guides.map((g) => (g.id === 'advance' ? { ...g, position: glyph.advance } : g));
+    edited.set(glyph.name, { path, ids, advance: position('advance') });
+    const loaded = loadGlyph(name);
+    const saved = edited.get(name);
+    glyph = loaded.glyph;
+    path = saved?.path ?? loaded.path;
+    ids = saved?.ids ?? loaded.ids;
+    const advance = saved?.advance ?? glyph.advance;
+    guides = guides.map((g) => (g.id === 'advance' ? { ...g, position: advance } : g));
     history = emptyHistory;
     selection = new Set();
     hoveredId = null;
@@ -776,5 +789,31 @@ for (const name of Object.keys(fixture.glyphs)) {
   });
   nav.append(button);
 }
+
+/** Every glyph as it is now: the one on screen, the edited ones, and the rest as loaded. */
+const allGlyphs = (): ExportGlyph[] =>
+  Object.keys(fixture.glyphs).map((name) => {
+    const unicode = name.codePointAt(0) ?? 0;
+    const kept = name === glyph.name ? { path, advance: position('advance') } : edited.get(name);
+    if (kept) return { name, unicode, path: kept.path, advance: kept.advance };
+    const loaded = loadGlyph(name);
+    return { name, unicode, path: loaded.path, advance: loaded.glyph.advance };
+  });
+
+exportButton.addEventListener('click', () => {
+  const bytes = exportOtf(allGlyphs(), {
+    unitsPerEm: fixture.unitsPerEm,
+    ascender: position('ascender'),
+    descender: position('descender'),
+    xHeight: position('xHeight'),
+    capHeight: position('capHeight'),
+  });
+  // A download link: Electron asks where to save it, as a browser would.
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([bytes], { type: 'font/otf' }));
+  link.download = `${FAMILY_NAME.replaceAll(' ', '')}-Regular.otf`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+});
 
 render();

@@ -14,7 +14,8 @@
   "dependencies": {
     "@vcore/editing": "*",
     "@vcore/geometry": "*",
-    "@vcore/path": "*"
+    "@vcore/path": "*",
+    "opentype.js": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

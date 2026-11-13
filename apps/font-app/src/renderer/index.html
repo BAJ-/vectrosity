@@ -58,6 +58,13 @@
           serif;
         width: 36px;
       }
+      #export {
+        margin-left: auto;
+        font:
+          13px system-ui,
+          sans-serif;
+        padding: 0 12px;
+      }
       header button[aria-pressed='true'] {
         background: #222;
         color: #fff;
@@ -96,6 +103,9 @@
         </select>
       </div>
       <nav id="glyphs" aria-label="Glyphs"></nav>
+      <button id="export" title="Save all glyphs as an OpenType font, with overlaps removed">
+        Export OTF
+      </button>
     </header>
     <canvas id="canvas"></canvas>
     <aside id="info"></aside>
