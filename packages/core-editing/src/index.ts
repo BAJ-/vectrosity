@@ -6,3 +6,4 @@ export * from './pen';
 export * from './snap';
 export * from './guides';
 export * from './selection';
+export * from './overlay';

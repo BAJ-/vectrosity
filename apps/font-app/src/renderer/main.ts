@@ -23,6 +23,7 @@ import {
   hitTestSegment,
   idlePen,
   movePoints,
+  overlay,
   penAdd,
   penClose,
   penContinue,
@@ -229,26 +230,6 @@ const fitView = (): void => {
 
 const screen = (p: Vec2): Vec2 => apply(view, p);
 
-/** Pairs of points joined by a handle line: every off-curve point to its neighbours,
- *  except the two handles of a cubic, which are not joined to each other. */
-const handleLines = (c: Contour): [Point, Point][] => {
-  const pts = c.points;
-  const lines: [Point, Point][] = [];
-  pts.forEach((p, i) => {
-    const q = pts.at((i + 1) % pts.length);
-    if (!q || (isOnCurve(p) && isOnCurve(q))) return;
-    if (!isOnCurve(p) && !isOnCurve(q)) {
-      const nextOn = pts
-        .slice(i + 1)
-        .concat(pts)
-        .find(isOnCurve);
-      if (nextOn?.type === 'curve') return;
-    }
-    lines.push([p, q]);
-  });
-  return lines;
-};
-
 const draw = (): void => {
   const dpr = window.devicePixelRatio;
   canvas.width = canvas.clientWidth * dpr;
@@ -291,50 +272,45 @@ const draw = (): void => {
   ctx.lineWidth = 1;
   ctx.stroke(outline);
 
-  // Handles, then points: on-curve squares (circles when smooth), off-curve small circles.
-  ctx.strokeStyle = '#999';
-  for (const c of path.contours) {
-    for (const [p, q] of handleLines(c)) {
-      const a = screen(p);
-      const b = screen(q);
+  // Editing marks from the core: handle lines, points, the pen's pending handle and the
+  // selection rectangle. Anchors are squares (circles when smooth), handles small circles.
+  const marks = overlay({ path, view, selection, hovered: hoveredId, pen, marquee });
+  for (const item of marks) {
+    ctx.lineWidth = 1;
+    if (item.kind === 'handle' || item.kind === 'pending') {
+      ctx.strokeStyle = '#999';
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(item.from.x, item.from.y);
+      ctx.lineTo(item.to.x, item.to.y);
       ctx.stroke();
     }
-  }
-  for (const c of path.contours) {
-    c.points.forEach((p, i) => {
-      const s = screen(p);
-      const isSelected = selection.has(p.id);
-      const active = isSelected || p.id === hoveredId;
-      ctx.fillStyle = isSelected ? '#d33' : i === 0 ? '#2a7' : isOnCurve(p) ? '#226' : '#fff';
+    if (item.kind === 'pending') {
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#226';
+      ctx.beginPath();
+      ctx.arc(item.to.x, item.to.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (item.kind === 'point') {
+      const { at, shape } = item;
+      const active = item.selected || item.hovered;
+      const onCurve = shape !== 'offcurve';
+      ctx.fillStyle = item.selected ? '#d33' : item.start ? '#2a7' : onCurve ? '#226' : '#fff';
       ctx.strokeStyle = active ? '#d33' : '#226';
       const r = active ? 5 : 3.5;
       ctx.beginPath();
-      if (isOnCurve(p) && !p.smooth) ctx.rect(s.x - r, s.y - r, r * 2, r * 2);
-      else ctx.arc(s.x, s.y, isOnCurve(p) ? r : r - 1, 0, Math.PI * 2);
+      if (shape === 'corner') ctx.rect(at.x - r, at.y - r, r * 2, r * 2);
+      else ctx.arc(at.x, at.y, onCurve ? r : r - 1, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-    });
-  }
-
-  // The pen's dragged-out handle, which the next segment will start with.
-  const last = path.contours.find((c) => c.id === pen.contourId)?.points.at(-1);
-  if (pen.pendingOut && last) {
-    const a = screen(last);
-    const b = screen(pen.pendingOut);
-    ctx.strokeStyle = '#999';
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#226';
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    }
+    if (item.kind === 'marquee') {
+      ctx.strokeStyle = '#d33';
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(item.from.x, item.from.y, item.to.x - item.from.x, item.to.y - item.from.y);
+      ctx.setLineDash([]);
+    }
   }
 
   // The lines a drag or pen press snapped to.
@@ -352,14 +328,6 @@ const draw = (): void => {
     ctx.moveTo(0, y);
     ctx.lineTo(canvas.clientWidth, y);
     ctx.stroke();
-  }
-
-  if (marquee) {
-    ctx.strokeStyle = '#d33';
-    ctx.setLineDash([4, 3]);
-    const { start, end } = marquee;
-    ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
-    ctx.setLineDash([]);
   }
 
   drawRulers();
