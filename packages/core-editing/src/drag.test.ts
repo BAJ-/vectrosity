@@ -83,6 +83,28 @@ describe('movePoints', () => {
     expect(byId(moved, at(path, 10, 20).id)).toMatchObject({ x: 10, y: 20 });
   });
 
+  it('slides the handle of a tangent anchor along the straight line', () => {
+    // A line arrives at the smooth anchor (20,0); its handle (30,0) continues the line.
+    const path = fromSvgPath('M0 0 L20 0 C30 0 40 10 40 20', counterIds());
+    const anchor = at(path, 20, 0);
+    const handle = at(path, 30, 0);
+    const smooth = {
+      contours: path.contours.map((c) => ({
+        ...c,
+        points: c.points.map((p) => (p.id === anchor.id ? { ...p, smooth: true } : p)),
+      })),
+    };
+    const pulled = movePoints(smooth, new Set([handle.id]), vec2(5, 5));
+    expect(byId(pulled, handle.id)).toMatchObject({ x: 35, y: 0 });
+    // Pulled back past the anchor it stops on the anchor.
+    const back = movePoints(smooth, new Set([handle.id]), vec2(-20, 3));
+    expect(byId(back, handle.id)).toMatchObject({ x: 20, y: 0 });
+    // With independent it moves freely and the anchor becomes a corner.
+    const free = movePoints(smooth, new Set([handle.id]), vec2(5, 5), { independent: true });
+    expect(byId(free, handle.id)).toMatchObject({ x: 35, y: 5 });
+    expect(byId(free, anchor.id).smooth).toBe(false);
+  });
+
   it('does not drag a quadratic control point along with either anchor', () => {
     const path = fromSvgPath('M0 0 Q10 10 20 0', counterIds());
     const start = at(path, 0, 0);

@@ -1,4 +1,4 @@
-import { add, length, scale, sub, vec2, type Vec2 } from '@vcore/geometry';
+import { add, dot, length, scale, sub, vec2, type Vec2 } from '@vcore/geometry';
 import { contourRuns, isClosed, isOnCurve, type Contour, type Path, type Point } from '@vcore/path';
 
 /** The IDs of the selected points. */
@@ -52,8 +52,9 @@ export interface MoveOptions {
  * Moves the selected points by `delta` (model units). Structure-preserving.
  * - An anchor's own handles move with it.
  * - A handle dragged on its own, on a smooth anchor, turns the anchor's opposite handle so the
- *   two stay in a straight line; the opposite handle keeps its length.
- *   With `independent`, the anchor becomes a corner instead.
+ *   two stay in a straight line; the opposite handle keeps its length. When a straight line
+ *   arrives on the other side instead (a tangent anchor), the handle only slides along the
+ *   line's direction. With `independent`, the anchor becomes a corner instead.
  */
 export const movePoints = (
   path: Path,
@@ -90,7 +91,19 @@ export const movePoints = (
         }
         const oppositeI = neighbour(c, ownerI, ownerI === neighbour(c, i, 1) ? 1 : -1);
         const opposite = pointAt(c, oppositeI);
-        if (oppositeI === null || !opposite || isOnCurve(opposite) || moving.has(oppositeI)) return;
+        if (oppositeI === null || !opposite || moving.has(oppositeI)) return;
+        if (isOnCurve(opposite)) {
+          // A tangent anchor: a straight line arrives on the other side, so the handle may only
+          // slide along the line's direction, and not past the anchor.
+          const line = sub(anchor, opposite);
+          const lineLength = length(line);
+          if (lineLength === 0) return;
+          const along = scale(line, 1 / lineLength);
+          const reach = Math.max(0, dot(sub(handle, anchor), along));
+          const slid = add(anchor, scale(along, reach));
+          points[i] = { ...handle, x: slid.x, y: slid.y };
+          return;
+        }
         if (ownerIndex(c, oppositeI) !== ownerI) return;
         const out = sub(handle, anchor);
         const outLength = length(out);
