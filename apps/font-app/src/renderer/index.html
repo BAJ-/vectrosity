@@ -30,9 +30,18 @@
         display: flex;
         gap: 4px;
       }
-      #tools {
+      #tools,
+      #settings {
         padding-right: 16px;
         border-right: 1px solid #ddd;
+      }
+      #settings {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #settings select {
+        height: 32px;
       }
       header button {
         height: 32px;
@@ -77,6 +86,14 @@
       <div id="tools" role="toolbar" aria-label="Tools">
         <button data-tool="select" title="Select (V)" aria-pressed="true">Select</button>
         <button data-tool="pen" title="Pen (P)" aria-pressed="false">Pen</button>
+      </div>
+      <div id="settings">
+        <label for="handle-mode">Handles</label>
+        <select id="handle-mode" title="What the opposite handle of a smooth anchor does">
+          <option value="keep-length">Keep length</option>
+          <option value="mirror">Mirror</option>
+          <option value="independent">Independent</option>
+        </select>
       </div>
       <nav id="glyphs" aria-label="Glyphs"></nav>
     </header>

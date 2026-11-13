@@ -43,18 +43,27 @@ const ownerIndex = (c: Contour, i: number): number | null => {
   return prevOn ? prev : next;
 };
 
+/**
+ * What happens to the opposite handle when a handle of a smooth anchor is dragged on its own:
+ * - 'keep-length': it turns to stay in line and keeps its own length (the usual for fonts);
+ * - 'mirror': it turns to stay in line and takes the same length;
+ * - 'independent': it stays put, and the anchor becomes a corner.
+ * A tool setting, not stored on the anchor.
+ */
+export type HandleMode = 'keep-length' | 'mirror' | 'independent';
+
 export interface MoveOptions {
-  /** Move handles on their own: the opposite handle stays put and the anchor becomes a corner. */
-  readonly independent?: boolean;
+  /** Defaults to 'keep-length'. */
+  readonly handles?: HandleMode;
 }
 
 /**
  * Moves the selected points by `delta` (model units). Structure-preserving.
  * - An anchor's own handles move with it.
  * - A handle dragged on its own, on a smooth anchor, turns the anchor's opposite handle so the
- *   two stay in a straight line; the opposite handle keeps its length. When a straight line
+ *   two stay in a straight line, as `handles` says (see HandleMode). When a straight line
  *   arrives on the other side instead (a tangent anchor), the handle only slides along the
- *   line's direction. With `independent`, the anchor becomes a corner instead.
+ *   line's direction, unless `handles` is 'independent'.
  */
 export const movePoints = (
   path: Path,
@@ -85,7 +94,8 @@ export const movePoints = (
         if (!handle || isOnCurve(handle) || ownerI === null || moving.has(ownerI)) return;
         const anchor = points.at(ownerI);
         if (!anchor?.smooth) return;
-        if (options.independent) {
+        const mode = options.handles ?? 'keep-length';
+        if (mode === 'independent') {
           points[ownerI] = { ...anchor, smooth: false };
           return;
         }
@@ -108,7 +118,7 @@ export const movePoints = (
         const out = sub(handle, anchor);
         const outLength = length(out);
         if (outLength === 0) return;
-        const keep = length(sub(opposite, anchor));
+        const keep = mode === 'mirror' ? outLength : length(sub(opposite, anchor));
         const turned = sub(anchor, scale(out, keep / outLength));
         points[oppositeI] = { ...opposite, x: turned.x, y: turned.y };
       });

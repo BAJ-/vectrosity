@@ -35,6 +35,7 @@ import {
   undo,
   type EditState,
   type Guide,
+  type HandleMode,
   type History,
   type PenState,
   type Selection,
@@ -78,8 +79,19 @@ const NUDGE_LARGE = 10;
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
 const info = document.querySelector<HTMLElement>('#info');
 const nav = document.querySelector<HTMLElement>('#glyphs');
+const handleSelect = document.querySelector<HTMLSelectElement>('#handle-mode');
 const ctx = canvas?.getContext('2d');
-if (!canvas || !info || !nav || !ctx) throw new Error('page is missing an element');
+if (!canvas || !info || !nav || !handleSelect || !ctx) {
+  throw new Error('page is missing an element');
+}
+
+/** The Handles setting: what the opposite handle of a smooth anchor does in a drag. */
+const handleMode = (): HandleMode => {
+  const value = handleSelect.value;
+  return value === 'mirror' || value === 'independent' ? value : 'keep-length';
+};
+// Hand the keyboard back to the canvas, so arrow keys nudge points instead of the setting.
+handleSelect.addEventListener('change', () => handleSelect.blur());
 
 interface Glyph {
   readonly name: string;
@@ -118,8 +130,9 @@ let selection: Selection = new Set();
 let hoveredId: string | null = null;
 /**
  * While dragging points: the path and mouse position (model units) when the drag started.
- * `independent` moves a handle without its opposite handle. `retractId` is set for an
- * Option/Alt-press on a handle: released without moving, the handle is retracted instead.
+ * `independent` (an Option/Alt-drag) moves a handle on its own whatever the Handles setting
+ * says. `retractId` is set for an Option/Alt-press on a handle: released without moving, the
+ * handle is retracted instead.
  */
 let drag: {
   startPath: Path;
@@ -427,7 +440,9 @@ const showInfo = (): void => {
         '<p>Drag from a ruler to add a guide; drag a guide back onto its ruler to remove it.</p>' +
         '<p>Double-click an anchor to switch between smooth and corner.</p>' +
         '<p>Option/Alt-click an anchor to reset its handles, or a handle to retract it. ' +
-        'Option/Alt-drag a handle to move it on its own.</p>';
+        'Option/Alt-drag a handle to move it on its own.</p>' +
+        '<p>The Handles setting decides what the other handle of a smooth anchor does when ' +
+        'you drag one: turn and keep its length, turn and mirror the length, or stay put.</p>';
   const point = only
     ? `<p>${only.id}: ${only.type}${only.smooth ? ', smooth' : ''}</p><p>x ${only.x}, y ${only.y}</p>`
     : chosen.length > 1
@@ -603,7 +618,8 @@ canvas.addEventListener('mousemove', (event) => {
     let adjusted = delta;
     if (event.shiftKey) adjusted = constrainDelta(delta);
     else if (!snapOff(event)) adjusted = snap(moving, delta);
-    path = movePoints(drag.startPath, selection, adjusted, { independent: drag.independent });
+    const handles = drag.independent ? 'independent' : handleMode();
+    path = movePoints(drag.startPath, selection, adjusted, { handles });
     draw();
     showInfo();
     return;

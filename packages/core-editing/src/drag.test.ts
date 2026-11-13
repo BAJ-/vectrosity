@@ -62,11 +62,11 @@ describe('movePoints', () => {
     expect(o.x).toBeLessThan(anchor.x);
   });
 
-  it('with independent, leaves the opposite handle alone and makes the anchor a corner', () => {
+  it('with independent handles, leaves the opposite alone and makes the anchor a corner', () => {
     const path = build(true);
     const anchor = at(path, 20, 20);
     const moved = movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 10), {
-      independent: true,
+      handles: 'independent',
     });
     expect(byId(moved, at(path, 10, 20).id)).toMatchObject({ x: 10, y: 20 });
     expect(byId(moved, anchor.id).smooth).toBe(false);
@@ -75,6 +75,17 @@ describe('movePoints', () => {
   it('returns the same path for a zero move', () => {
     const path = build(true);
     expect(movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 0))).toBe(path);
+  });
+
+  it('with mirrored handles, gives the opposite handle the same length', () => {
+    const path = build(true);
+    const anchor = at(path, 20, 20);
+    // The handle (30,20) moves to (30,30): 10 right and 10 up from the anchor.
+    const moved = movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 10), {
+      handles: 'mirror',
+    });
+    expect(byId(moved, at(path, 10, 20).id)).toMatchObject({ x: 10, y: 10 });
+    expect(byId(moved, anchor.id).smooth).toBe(true);
   });
 
   it('leaves the opposite handle alone when the anchor is a corner', () => {
@@ -99,8 +110,8 @@ describe('movePoints', () => {
     // Pulled back past the anchor it stops on the anchor.
     const back = movePoints(smooth, new Set([handle.id]), vec2(-20, 3));
     expect(byId(back, handle.id)).toMatchObject({ x: 20, y: 0 });
-    // With independent it moves freely and the anchor becomes a corner.
-    const free = movePoints(smooth, new Set([handle.id]), vec2(5, 5), { independent: true });
+    // With independent handles it moves freely and the anchor becomes a corner.
+    const free = movePoints(smooth, new Set([handle.id]), vec2(5, 5), { handles: 'independent' });
     expect(byId(free, handle.id)).toMatchObject({ x: 35, y: 5 });
     expect(byId(free, anchor.id).smooth).toBe(false);
   });
