@@ -8,8 +8,8 @@ import {
   type Path,
   type Point,
 } from '@vcore/path';
-import { resetHandles, retractHandle } from './handles';
-import { diffPaths, emptyHistory, record, undo } from './history';
+import { resetHandles, retractHandle, toggleSmooth } from './handles';
+import { diff, emptyHistory, record, undo } from './history';
 
 const load = (d: string): Path => fromSvgPath(d, counterIds('s'));
 const points = (path: Path): Point[] => path.contours.flatMap((c) => c.points);
@@ -80,8 +80,8 @@ describe('resetHandles', () => {
   it('is undone in one step', () => {
     const path = load(d);
     const reset = resetHandles(path, at(path, 30, 0).id, counterIds('n'));
-    const history = record(emptyHistory, diffPaths(path, reset));
-    expect(undo(history, reset)?.path).toEqual(path);
+    const history = record(emptyHistory, diff({ path, guides: [] }, { path: reset, guides: [] }));
+    expect(undo(history, { path: reset, guides: [] })?.state.path).toEqual(path);
   });
 });
 
@@ -107,5 +107,40 @@ describe('retractHandle', () => {
     const path = load('M0 0 Q10 10 20 0');
     expect(retractHandle(path, at(path, 10, 10).id)).toBe(path);
     expect(retractHandle(path, at(path, 0, 0).id)).toBe(path);
+  });
+});
+
+describe('toggleSmooth', () => {
+  const smoothAt = (path: Path, id: string) => points(path).find((p) => p.id === id)?.smooth;
+
+  it('lines up two handles and keeps their lengths, then turns back into a corner', () => {
+    // Corner at (20,20): handle (10,20) before it, (30,30) after it.
+    const path = load('M0 0 C0 10 10 20 20 20 C30 30 40 10 40 0');
+    const anchor = at(path, 20, 20);
+    const smooth = toggleSmooth(path, anchor.id);
+    const [before, after] = neighbours(smooth, anchor.id);
+    expect(Math.abs(cross(sub(before, anchor), sub(after, anchor)))).toBeLessThan(1e-9);
+    expect(distance(before, anchor)).toBeCloseTo(10, 9);
+    expect(distance(after, anchor)).toBeCloseTo(Math.hypot(10, 10), 9);
+    expect(after.x).toBeGreaterThan(anchor.x);
+    expect(smoothAt(smooth, anchor.id)).toBe(true);
+    const corner = toggleSmooth(smooth, anchor.id);
+    expect(smoothAt(corner, anchor.id)).toBe(false);
+    expect(neighbours(corner, anchor.id)).toEqual([before, after]);
+  });
+
+  it('turns a handle next to a straight line to continue the line', () => {
+    const path = load('M0 0 L30 0 C40 10 60 10 60 30');
+    const anchor = at(path, 30, 0);
+    const smooth = toggleSmooth(path, anchor.id);
+    const [, handle] = neighbours(smooth, anchor.id);
+    expect(handle.x).toBeCloseTo(30 + Math.hypot(10, 10), 9);
+    expect(handle.y).toBeCloseTo(0, 9);
+    expect(smoothAt(smooth, anchor.id)).toBe(true);
+  });
+
+  it('leaves an anchor between two straight lines alone', () => {
+    const path = load('M0 0 L10 0 L10 10 Z');
+    expect(toggleSmooth(path, at(path, 10, 0).id)).toBe(path);
   });
 });

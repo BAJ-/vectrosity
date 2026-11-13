@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { cross, distance, sub, vec2 } from '@vcore/geometry';
-import { counterIds, fromSvgPath, type Path, type Point } from '@vcore/path';
-import { constrainDelta, movePoints } from './drag';
+import fc from 'fast-check';
+import { add, cross, distance, endPoint, evaluate, sub, vec2 } from '@vcore/geometry';
+import { point } from '@vcore/geometry/testing';
+import { counterIds, fromSvgPath, toSegments, type Path, type Point } from '@vcore/path';
+import { constrainDelta, dragSegment, movePoints } from './drag';
 
 // Two cubics meeting at the anchor (20,20), with its handles at (10,20) before and (30,20) after.
 // Points are found by position (`at`) and then by id (`byId`), so tests do not depend on ids.
@@ -60,6 +62,21 @@ describe('movePoints', () => {
     expect(o.x).toBeLessThan(anchor.x);
   });
 
+  it('with independent, leaves the opposite handle alone and makes the anchor a corner', () => {
+    const path = build(true);
+    const anchor = at(path, 20, 20);
+    const moved = movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 10), {
+      independent: true,
+    });
+    expect(byId(moved, at(path, 10, 20).id)).toMatchObject({ x: 10, y: 20 });
+    expect(byId(moved, anchor.id).smooth).toBe(false);
+  });
+
+  it('returns the same path for a zero move', () => {
+    const path = build(true);
+    expect(movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 0))).toBe(path);
+  });
+
   it('leaves the opposite handle alone when the anchor is a corner', () => {
     const path = build(false);
     const moved = movePoints(path, new Set([at(path, 30, 20).id]), vec2(0, 10));
@@ -84,5 +101,47 @@ describe('constrainDelta', () => {
     expect(v.y).toBeCloseTo(8, 9);
     const d = constrainDelta(vec2(10, 9));
     expect(d.x).toBeCloseTo(d.y, 9);
+  });
+});
+
+describe('dragSegment', () => {
+  const segmentAt = (path: Path, i: number) => {
+    const s = toSegments(path.contours[0] ?? { id: '', points: [] })[i];
+    if (!s) throw new Error('no segment');
+    return s;
+  };
+
+  it('moves the grabbed point by exactly the drag, keeping the anchors', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0.01, max: 0.99, noNaN: true }), point, (t, delta) => {
+        const path = build(false);
+        const dragged = dragSegment(path, path.contours[0]?.id ?? '', 0, t, delta);
+        const before = segmentAt(path, 0);
+        const after = segmentAt(dragged, 0);
+        const moved = evaluate(after, t);
+        const expected = add(evaluate(before, t), delta);
+        const scale = 1 + Math.abs(delta.x) + Math.abs(delta.y);
+        expect(distance(moved, expected) / scale).toBeLessThan(1e-9);
+        expect(after.p0).toEqual(before.p0);
+        expect(endPoint(after)).toEqual(endPoint(before));
+      }),
+    );
+  });
+
+  it('keeps a smooth anchor at the end of the segment smooth', () => {
+    const path = build(true);
+    const anchor = at(path, 20, 20);
+    const dragged = dragSegment(path, path.contours[0]?.id ?? '', 0, 0.8, vec2(0, 10));
+    const before = byId(dragged, at(path, 10, 20).id);
+    const after = byId(dragged, at(path, 30, 20).id);
+    expect(Math.abs(cross(sub(before, anchor), sub(after, anchor)))).toBeLessThan(1e-9);
+  });
+
+  it('leaves lines and the ends of the segment alone', () => {
+    const path = fromSvgPath('M0 0 L10 0', counterIds());
+    const id = path.contours[0]?.id ?? '';
+    expect(dragSegment(path, id, 0, 0.5, vec2(0, 5))).toBe(path);
+    const curve = build(false);
+    expect(dragSegment(curve, curve.contours[0]?.id ?? '', 0, 0, vec2(0, 5))).toBe(curve);
   });
 });

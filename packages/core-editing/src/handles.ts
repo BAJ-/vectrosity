@@ -101,3 +101,77 @@ export const retractHandle = (path: Path, handleId: string): Path => {
     otherPoint.y === otherOwner.y;
   return replaceContour(path, bothRetracted ? curveToLine(c, k) : c);
 };
+
+/** One side of an anchor: its handle (if the segment is a cubic) and the direction it points. */
+interface Side {
+  readonly handle: number | null;
+  /** Unit vector pointing away from the anchor, or null when there is no usable direction. */
+  readonly direction: Vec2 | null;
+}
+
+const unitOrNull = (v: Vec2): Vec2 | null => {
+  const l = length(v);
+  return l === 0 ? null : scale(v, 1 / l);
+};
+
+const sideOf = (c: Contour, anchor: Point, run: Run | undefined, incoming: boolean): Side => {
+  if (run && isCubicRun(run)) {
+    const handle = (incoming ? run.offs[1] : run.offs[0]) ?? 0;
+    const at = c.points[handle];
+    return { handle, direction: at ? unitOrNull(sub(at, anchor)) : null };
+  }
+  if (run?.type === 'line') {
+    const other = c.points[incoming ? run.start : run.end];
+    return { handle: null, direction: other ? unitOrNull(sub(other, anchor)) : null };
+  }
+  return { handle: null, direction: null };
+};
+
+/**
+ * Switches an anchor between corner and smooth. Making it smooth lines its handles up,
+ * keeping their lengths: two handles turn to the direction halfway between them; a handle
+ * next to a straight segment turns to continue the line. An anchor with no handle, or with
+ * straight segments on both sides, is returned unchanged. Structure-preserving.
+ */
+export const toggleSmooth = (path: Path, anchorId: string): Path => {
+  const found = findPoint(path, anchorId);
+  const anchor = found?.contour.points[found.index];
+  if (!found || !anchor || anchor.type === 'offcurve') return path;
+  const i = found.index;
+  let c = found.contour;
+  const setSmooth = (smooth: boolean): Contour => ({
+    ...c,
+    points: c.points.map((p, k) => (k === i ? { ...p, smooth } : p)),
+  });
+  if (anchor.smooth) return replaceContour(path, setSmooth(false));
+  const runs = contourRuns(c);
+  const incoming = runs.find((r) => r.end === i);
+  const outgoing = runs.find((r) => r.start === i);
+  const before = sideOf(c, anchor, incoming, true);
+  const after = sideOf(c, anchor, outgoing, false);
+  if (before.handle === null && after.handle === null) return path;
+  // The direction the outline runs through the anchor, from `before` towards `after`:
+  // along a straight segment if there is one, else halfway between the two handles.
+  let through: Vec2 | null;
+  if (before.handle === null && before.direction) {
+    through = scale(before.direction, -1);
+  } else if (after.handle === null && after.direction) {
+    through = after.direction;
+  } else if (before.direction && after.direction) {
+    through = unitOrNull(sub(after.direction, before.direction)) ?? after.direction;
+  } else {
+    // One handle has no length: follow the other one.
+    through = after.direction ?? (before.direction && scale(before.direction, -1));
+  }
+  if (!through) return path;
+  for (const [side, sign] of [
+    [before, -1],
+    [after, 1],
+  ] as const) {
+    const at = side.handle === null ? undefined : c.points[side.handle];
+    if (side.handle === null || !at) continue;
+    const handleLength = length(sub(at, anchor));
+    c = setPosition(c, side.handle, add(anchor, scale(through, sign * handleLength)));
+  }
+  return replaceContour(path, setSmooth(true));
+};

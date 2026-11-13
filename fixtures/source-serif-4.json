@@ -5,6 +5,8 @@
   "unitsPerEm": 1000,
   "ascender": 1036,
   "descender": -335,
+  "xHeight": 475,
+  "capHeight": 670,
   "glyphs": {
     "a": {
       "advance": 541,
